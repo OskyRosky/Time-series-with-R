@@ -1,0 +1,594 @@
+---
+title: "Laboratorio n°6"
+author: "Oscar Centeno Mora"
+date: "Tomorrow never dies"
+output: 
+   html_document: 
+       toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+suppressMessages(library(readxl))
+suppressMessages(library(tseries))
+suppressMessages(library(timeSeries))
+suppressMessages(library(forecast))
+suppressMessages(library(TTR))
+suppressMessages(library(lubridate))
+suppressMessages(library(plotly))
+suppressMessages(library(plyr))
+suppressMessages(library(ggthemes))
+suppressMessages(library(gridExtra))
+suppressMessages(library(scales))
+suppressMessages(library(ggplot2))
+suppressMessages(library(tidyr))
+suppressMessages(library(dplyr))
+suppressMessages(library(smooth))
+suppressMessages(library(astsa))
+suppressMessages(library(fpp))
+suppressMessages(library(fpp2))
+suppressMessages(library(VGAMdata))
+suppressMessages(library(GGally))
+suppressMessages(library(seasonal))
+suppressMessages(library(fpp2))
+suppressMessages(library(urca))
+suppressMessages(library(astsa))
+suppressMessages(library(formattable))
+suppressMessages(library(ggplot2))
+suppressMessages(library(forecast))
+suppressMessages(library(astsa))
+suppressMessages(library(lmtest))
+suppressMessages(library(fUnitRoots))
+suppressMessages(library(FitARMA))
+suppressMessages(library(strucchange))
+suppressMessages(library(reshape))
+suppressMessages(library(Rmisc))
+suppressMessages(library(fBasics))
+suppressMessages(library(MASS))
+suppressMessages(library(sBIC))
+suppressMessages(library(neuralnet))
+
+library(tidyverse)
+library(neuralnet)
+library(GGally)
+
+```
+
+<style>
+table {
+background-color:#FFFFFF;
+}
+</style>
+
+<style>
+.list-group-item.active, .list-group-item.active:focus, .list-group-item.active:hover {
+    background-color: darkblue;
+}
+</style>
+
+<button onclick="document.body.scrollTop = document.documentElement.scrollTop = 0;" style="
+    position: fixed;
+    bottom: 5px;
+    right: 40px;
+    text-align: center;
+    cursor: pointer;
+    outline: none;
+    color: #fff;
+    background-color: #0A71A0;
+    border: none;
+    border-radius: 15px;
+    
+">Ir arriba</button>
+
+
+# Redes Neuronales Artificiales en las series de tiempo  {.tabset .tabset-fade .tabset-pills}
+
+## Estimación de una RNA normal 
+
+El ejemplo se obtienen de 
+https://www.r-bloggers.com/fitting-a-neural-network-in-r-neuralnet-package/
+
+Obtengamos los datos
+
+```{r}
+set.seed(500)
+library(MASS)
+data <- Boston
+
+apply(data,2,function(x) sum(is.na(x)))
+
+```
+
+
+Partición de la data
+
+```{r}
+
+index <- sample(1:nrow(data),round(0.75*nrow(data)))
+train <- data[index,]
+test <- data[-index,]
+lm.fit <- glm(medv~., data=train)
+summary(lm.fit)
+pr.lm <- predict(lm.fit,test)
+MSE.lm <- sum((pr.lm - test$medv)^2)/nrow(test)
+```
+
+
+Preparación de la serie : escalamientos y asignación de los sets de entrenamiento y prueba
+
+```{r}
+maxs <- apply(data, 2, max) 
+mins <- apply(data, 2, min)
+
+scaled <- as.data.frame(scale(data, center = mins, scale = maxs - mins))
+
+train_ <- scaled[index,]
+test_ <- scaled[-index,]
+```
+
+
+Estimación de la serie
+
+```{r}
+library(neuralnet)
+n <- names(train_)
+f <- as.formula(paste("medv ~", paste(n[!n %in% "medv"], collapse = " + ")))
+nn <- neuralnet(f,data=train_,hidden=c(5,3),linear.output=T)
+```
+
+Visualización de la serie
+
+```{r, results="asis"}
+plot(nn)
+```
+
+Predicción 
+
+```{r}
+pr.nn <- compute(nn,test_[,1:13])
+
+pr.nn_ <- pr.nn$net.result*(max(data$medv)-min(data$medv))+min(data$medv)
+test.r <- (test_$medv)*(max(data$medv)-min(data$medv))+min(data$medv)
+
+MSE.nn <- sum((test.r - pr.nn_)^2)/nrow(test_)
+
+print(paste(MSE.lm,MSE.nn))
+```
+
+
+Validación interna
+
+```{r}
+par(mfrow=c(1,2))
+
+plot(test$medv,pr.nn_,col='red',main='Real vs predicted NN',pch=18,cex=0.7)
+abline(0,1,lwd=2)
+legend('bottomright',legend='NN',pch=18,col='red', bty='n')
+
+plot(test$medv,pr.lm,col='blue',main='Real vs predicted lm',pch=18, cex=0.7)
+abline(0,1,lwd=2)
+legend('bottomright',legend='LM',pch=18,col='blue', bty='n', cex=.95)
+
+
+par(mfrow=c(1,1))
+
+plot(test$medv,pr.nn_,col='red',main='Real vs predicted NN',pch=18,cex=0.7)
+points(test$medv,pr.lm,col='blue',pch=18,cex=0.7)
+abline(0,1,lwd=2)
+legend('bottomright',legend=c('NN','LM'),pch=18,col=c('red','blue'))
+
+```
+
+
+## Regresión mediante una RNA {.tabset .tabset-fade}
+
+### Regresión con una capa
+
+Datos
+
+```{r}
+Yacht_Data <- read_table(file = 'http://archive.ics.uci.edu/ml/machine-learning-databases/00243/yacht_hydrodynamics.data',
+                         col_names = c('LongPos_COB', 'Prismatic_Coeff', 
+                                       'Len_Disp_Ratio', 'Beam_Draut_Ratio', 
+                                       'Length_Beam_Ratio','Froude_Num', 
+                                       'Residuary_Resist')) %>%
+  na.omit()
+
+```
+
+Correlaciones 
+
+```{r}
+ggpairs(Yacht_Data, title = "Scatterplot Matrix of the Features of the Yacht Data Set")
+```
+
+Partición de los datos
+
+```{r}
+scale01 <- function(x){
+  (x - min(x)) / (max(x) - min(x))
+}
+Yacht_Data <- Yacht_Data %>%
+  mutate_all(scale01)
+
+set.seed(12345)
+Yacht_Data_Train <- sample_frac(tbl = Yacht_Data, replace = FALSE, size = 0.80)
+Yacht_Data_Test <- anti_join(Yacht_Data, Yacht_Data_Train)
+```
+
+Regresión con una sola capa oculta
+
+```{r}
+set.seed(12321)
+Yacht_NN1 <- neuralnet(Residuary_Resist ~ LongPos_COB + Prismatic_Coeff + 
+                         Len_Disp_Ratio + Beam_Draut_Ratio + Length_Beam_Ratio +
+                         Froude_Num, data = Yacht_Data_Train)
+
+
+plot(Yacht_NN1, rep = 'best')
+```
+
+Una medida de rendimiento
+
+```{r}
+NN1_Train_SSE <- sum((Yacht_NN1$net.result - Yacht_Data_Train[, 7])^2)/2
+paste("SSE: ", round(NN1_Train_SSE, 4))
+```
+
+Validación
+
+```{r}
+Test_NN1_Output <- compute(Yacht_NN1, Yacht_Data_Test[, 1:6])$net.result
+NN1_Test_SSE <- sum((Test_NN1_Output - Yacht_Data_Test[, 7])^2)/2
+NN1_Test_SSE
+```
+
+
+### Regresión con hyper parámetros : diversas capas
+
+Veamos ahora con dos capas ocultas:
+2-Hidden Layers, Layer-1 4-neurons, Layer-2, 1-neuron, logistic activation
+
+```{r}
+set.seed(12321)
+Yacht_NN2 <- neuralnet(Residuary_Resist ~ LongPos_COB + Prismatic_Coeff + Len_Disp_Ratio + 
+                         Beam_Draut_Ratio + Length_Beam_Ratio + Froude_Num, data = Yacht_Data_Train, 
+                       hidden = c(4, 1), act.fct = "logistic")
+```
+
+Error de entrenamiento 
+
+```{r}
+NN2_Train_SSE <- sum((Yacht_NN2$net.result - Yacht_Data_Train[, 7])^2)/2
+```
+
+Error de validación
+
+```{r}
+Test_NN2_Output <- compute(Yacht_NN2, Yacht_Data_Test[, 1:6])$net.result
+NN2_Test_SSE <- sum((Test_NN2_Output - Yacht_Data_Test[, 7])^2)/2
+```
+
+Re escalamiento
+
+```{r}
+scale11 <- function(x) {
+  (2 * ((x - min(x))/(max(x) - min(x)))) - 1
+}
+Yacht_Data_Train <- Yacht_Data_Train %>% mutate_all(scale11)
+Yacht_Data_Test <- Yacht_Data_Test %>% mutate_all(scale11)
+```
+
+Y otras cosas, vamos al grano...
+
+```{r}
+# 2-Hidden Layers, Layer-1 4-neurons, Layer-2, 1-neuron, tanh activation
+# function
+set.seed(12321)
+Yacht_NN3 <- neuralnet(Residuary_Resist ~ LongPos_COB + Prismatic_Coeff + Len_Disp_Ratio + 
+                         Beam_Draut_Ratio + Length_Beam_Ratio + Froude_Num, data = Yacht_Data_Train, 
+                       hidden = c(4, 1), act.fct = "tanh")
+## Training Error
+NN3_Train_SSE <- sum((Yacht_NN3$net.result - Yacht_Data_Train[, 7])^2)/2
+## Test Error
+Test_NN3_Output <- compute(Yacht_NN3, Yacht_Data_Test[, 1:6])$net.result
+NN3_Test_SSE <- sum((Test_NN3_Output - Yacht_Data_Test[, 7])^2)/2
+
+# 1-Hidden Layer, 1-neuron, tanh activation function
+set.seed(12321)
+Yacht_NN4 <- neuralnet(Residuary_Resist ~ LongPos_COB + Prismatic_Coeff + Len_Disp_Ratio + 
+                         Beam_Draut_Ratio + Length_Beam_Ratio + Froude_Num, data = Yacht_Data_Train, 
+                       act.fct = "tanh")
+## Training Error
+NN4_Train_SSE <- sum((Yacht_NN4$net.result - Yacht_Data_Train[, 7])^2)/2
+## Test Error
+Test_NN4_Output <- compute(Yacht_NN4, Yacht_Data_Test[, 1:6])$net.result
+NN4_Test_SSE <- sum((Test_NN4_Output - Yacht_Data_Test[, 7])^2)/2
+```
+
+Resultados de cuántas capas deberíamos tomar
+
+```{r}
+Regression_NN_Errors <- tibble(Network = rep(c("NN1", "NN2", "NN3", "NN4"), 
+                                             each = 2), DataSet = rep(c("Train", "Test"), time = 4), SSE = c(NN1_Train_SSE, 
+                                                                                                             NN1_Test_SSE, NN2_Train_SSE, NN2_Test_SSE, NN3_Train_SSE, NN3_Test_SSE, 
+                                                                                                             NN4_Train_SSE, NN4_Test_SSE))
+Regression_NN_Errors %>% ggplot(aes(Network, SSE, fill = DataSet)) + geom_col(position = "dodge") + 
+  ggtitle("Regression ANN's SSE")
+
+```
+
+Veamos la red con la función de impulso y sus pesos
+
+```{r}
+plot(Yacht_NN2, rep = "best")
+```
+
+Veamos la RNA con una función de activación tangente 
+
+```{r}
+set.seed(12321)
+Yacht_NN2 <- neuralnet(Residuary_Resist ~ LongPos_COB + Prismatic_Coeff + Len_Disp_Ratio + 
+                         Beam_Draut_Ratio + Length_Beam_Ratio + Froude_Num, data = Yacht_Data_Train, 
+                       hidden = c(4, 1), act.fct = "tanh", rep = 10)
+plot(Yacht_NN2, rep = "best")
+```
+
+
+
+## Resultados {.tabset .tabset-fade}
+
+### Serie sunspotarea
+
+
+Pronóstico sin intervalos de confianza
+
+```{r}
+fit <- nnetar(sunspotarea, lambda=0)
+(fit <- nnetar(sunspotarea, lambda=0))
+summary(fit)
+
+(fit <- nnetar(lynx, lambda=0.5))
+
+autoplot(forecast(fit,h=30))
+```
+
+Pronóstico con intervalos de confianza
+
+```{r}
+fcast <- forecast(fit, PI=TRUE, h=30)
+autoplot(fcast)
+```
+
+
+### Serie oil
+
+Vamos a utilizar sobre el petroleo
+
+```{r}
+oildata <- window(oil, start=1996)
+autoplot(oildata) +  ylab("Petróleo (millones de toneladas)") + xlab("Año")
+```
+
+Estimación del modelo por NNA
+
+```{r}
+mod.1 <- nnetar(oildata, lambda=0)
+(mod.1 <- nnetar(oildata, lambda=0))
+
+```
+
+Visualización de los valores observador y ajustados
+
+```{r}
+autoplot(oildata, series="Valor observados") +
+  autolayer(fitted(mod.1), series="Valores ajustados") +
+  ylab("Petróleo (millones de toneladas)") + xlab("Año") +
+  ggtitle("Venta de Petróleo ")
+```
+
+Estadísticas de rendimiento 
+
+```{r}
+round(accuracy(mod.1),2)
+```
+
+Valores pronosticados  con intervalo de confianza
+
+```{r}
+fcast.1 <- forecast(mod.1, PI=TRUE, h=10)
+
+autoplot(fcast.1)
+```
+
+Valores pronosticados  sin intervalo de confianza
+
+```{r}
+mod.1 %>% forecast(h=5) %>%
+  autoplot() +
+  autolayer(oildata, series="Observados", PI=TRUE) +
+  autolayer(fitted(mod.1), series="Ajustados") +
+  ylab("Petróleo (millones de toneladas)") + xlab("Año")
+  ggtitle("Pronóstico de la venta de petroleo") 
+```
+
+
+
+### Serie unemp
+
+Veamos el desempleo en USA
+
+```{r}
+autoplot(unemp) +  ylab("Desempleo en USA") + xlab("Año")
+```
+
+Estimemos un auto.arima y un RNA
+
+```{r}
+mod2.1 <- auto.arima(unemp)
+mod2.2 <- nnetar(unemp)
+(mod2.2 <- nnetar(unemp))
+
+summary(mod2.1)
+summary(mod2.2)
+```
+
+Visualización de los valores observador y ajustados
+
+```{r}
+
+autoplot(unemp, series="Valor observados") +
+  autolayer(fitted(mod2.2), series="Valores ajustados") +
+  ylab("Cantidad de personas en miles") + xlab("Año") +
+  ggtitle("Desempleo en USA")
+```
+
+Estadísticas de rendimiento
+
+```{r}
+a<- round(accuracy(mod2.1),2)
+b<- round(accuracy(mod2.2),2)
+
+c<-rbind(a,b)
+rownames(c)  <- c("auto.arima", "Redes Neuronales") 
+c
+```
+
+Valores pronosticados  con intervalo de confianza
+
+```{r}
+fcast.2 <- forecast(mod2.2, PI=TRUE, h=24)
+
+autoplot(fcast.2)
+```
+
+Valores pronosticados  sin intervalo de confianza
+
+```{r}
+mod2.2 %>% forecast(h=24) %>%
+  autoplot() +
+  autolayer(fitted(mod2.2), series="Ajustados Redes Neuronales") +
+  ylab("") + xlab("Año") + 
+  ggtitle("Desempleo en USA") +
+  guides(colour=guide_legend(title="Estimación"))
+```
+
+
+### Serie birth 
+
+Analicemos los nacimientos. Veamos la serie
+
+```{r}
+autoplot(birth) +  ylab("Miles de nacimientos") + xlab("Año")
+```
+
+Estimemos un auto.arima y un RNA
+
+```{r}
+mod3.1 <- auto.arima(birth)
+mod3.2 <- nnetar(birth, lambda = 0)
+(mod3.2 <- nnetar(birth, lambda = 0))
+
+summary(mod3.1)
+summary(mod3.2)
+```
+
+Visualización de los valores observador y ajustados
+
+```{r}
+autoplot(birth, series="Valor observados") +
+  autolayer(fitted(mod3.2), series="Valores ajustados") +
+  ylab("Cantidad de personas en miles") + xlab("Año") +
+  ggtitle("Nacimientos en USA / Australia")
+```
+
+Veamos el ajuste interno
+
+```{r}
+a<- round(accuracy(mod3.1),2)
+b<- round(accuracy(mod3.2),2)
+
+c<-rbind(a,b)
+rownames(c)  <- c("Auto.ARIMA", "Redes Neuronales Artificiales") 
+c
+```
+
+Valores pronosticados  con intervalo de confianza
+
+```{r}
+fcast.3 <- forecast(mod3.2, PI=TRUE, h=24)
+
+autoplot(fcast.3)
+```
+
+Valores pronosticados  sin intervalo de confianza
+
+```{r}
+mod3.2 %>% forecast(h=24) %>%
+  autoplot() +
+  autolayer(fitted(mod3.2), series="Ajustados RNA") +
+  ylab("") + xlab("Año") + 
+  ggtitle("Nacimiento en USA luego de la SGM") +
+  guides(colour=guide_legend(title="Estimación"))
+```
+
+### Serie a10
+
+Analicemos la venta de medicamento para diabéticos en Australia
+
+```{r}
+autoplot(a10) +  ylab("Venta en miles") + xlab("Año") +
+  ggtitle("Venta de medicamento para diabéticos en Australia")
+```
+
+Estimemos un auto.arima y un RNA
+
+```{r}
+mod4.1 <- auto.arima(a10)
+mod4.2 <- nnetar(a10)
+(mod4.2 <- nnetar(a10))
+
+summary(mod4.1)
+summary(mod4.2)
+```
+
+Visualización de los valores observador y ajustados
+
+```{r}
+autoplot(a10, series="Valor observados") +
+  autolayer(fitted(mod4.2), series="Valores ajustados de la RNA") +
+  ylab("Venta en miles") + xlab("Año") +
+  ggtitle("Venta de medicamento para diabéticos en Australia")
+```
+
+Veamos el ajuste interno
+
+```{r}
+a<- round(accuracy(mod4.1),2)
+b<- round(accuracy(mod4.2),2)
+
+c<-rbind(a,b)
+rownames(c)  <- c("auto.arima", "Red Neuronal Artificial") 
+c
+```
+
+Valores pronosticados  con intervalo de confianza
+
+```{r}
+fcast.4 <- forecast(mod4.2, PI=TRUE, h=24)
+
+autoplot(fcast.4)
+```
+
+
+Valores pronosticados  sin intervalo de confianza
+
+```{r}
+mod4.2 %>% forecast(h=24) %>%
+  autoplot() +
+  autolayer(fitted(mod4.2), series="Ajustados auto.arima")+
+  ggtitle("Ventas de medicamentos para diabéticos en Australia") +
+  guides(colour=guide_legend(title="Estimación"))
+```
+
